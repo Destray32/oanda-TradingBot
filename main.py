@@ -9,7 +9,9 @@ from otwieranie import Kupowanie, Sprzedawanie
 from zamykanie import ZamknijPoz
 
 # TODO: INFO - pozmieniałem sposób sprawdzania otwartych pozycji i warunek wejscia na pozycje dla long i short
-
+# TODO: Zmienić sposób zamyniakia pozycji:
+# Jesli jestesmy na długiej pozycji to zamykamy ją gdy świeczka zamknie się jako czerwona i na odwrót
+# dla pozycji krótkiej
 
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN')
 ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
@@ -17,18 +19,20 @@ ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
 # globalne zmienne do sprawdzania czy jest otwarta pozycja
 global kupione
 global sprzedane
+global oczekiwanieNaPrzeciecie
 global bodyBuy
 global bodySell
 global bodyCloseLong
 global bodyCloseShort
 global paraWalutowa
-paraWalutowa = "USD_JPY"
+paraWalutowa = "EUR_USD"
 kupione = False
 sprzedane = False
+oczekiwanieNaPrzeciecie = False
 
 # body do kupowania waluty
-bodyBuy = f'{{"order": {{"units": "1","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
-bodySell = f'{{"order": {{"units": "-1","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
+bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
+bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
 bodyCloseLong = '{"longUnits": "ALL"}'
 bodyCloseShort = '{"shortUnits": "ALL"}'
 
@@ -62,7 +66,7 @@ def sprawdzOtwartePoz():
             print("Nie ma otwartych pozycji")
             return False
 
-def transakcja(przedOstatnia, ostatnia, movingAV):
+def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
     global sprzedane
     global kupione
     global bodyBuy
@@ -70,6 +74,7 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
     global bodyCloseLong
     global bodyCloseShort
     global paraWalutowa
+    global oczekiwanieNaPrzeciecie
 
     bodyBuyText = json.loads(bodyBuy)
     bodyBuyText = json.dumps(bodyBuyText)
@@ -84,7 +89,7 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
     bodyCloseShortText = json.dumps(bodyCloseShortText)
 
 
-    if ((ostatnia < movingAV) and sprzedane == False):
+    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and sprzedane == False):
         print(sprzedane, kupione)
         if (kupione == True):
             # TODO: przetestować czy te zamykanie dobrze działa gdy rynek bedzie otwarty
@@ -98,6 +103,7 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
 
             kupione = False
             sprzedane = True
+            oczekiwanieNaPrzeciecie = False
         else:
             czyOtwarda = sprawdzOtwartePoz()
 
@@ -106,9 +112,10 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
             print(str("Sprzedaj: " + str(data)))
 
             sprzedane = True
+            oczekiwanieNaPrzeciecie = False
         return
     
-    if ((ostatnia > movingAV) and kupione == False):
+    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and kupione == False):
         print(sprzedane, kupione)
         if (sprzedane == True):
             # TODO: przetestować czy te zamykanie dobrze działa gdy rynek bedzie otwarty
@@ -122,6 +129,7 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
 
             sprzedane = False
             kupione = True
+            oczekiwanieNaPrzeciecie = False
         else:
             czyOtwarda = sprawdzOtwartePoz()
 
@@ -130,7 +138,50 @@ def transakcja(przedOstatnia, ostatnia, movingAV):
             print(str("Kup: " + str(data)))
 
             kupione = True
+            oczekiwanieNaPrzeciecie = False
         return
+
+    ## nowy kod - rozpoznawanie wychamowywania trendu i wracanie spowortem gdy wychamowywanie 
+    # jest falszywe - wersja eksperymentalna
+
+    if (kupione == True and sprzedane == False and oczekiwanieNaPrzeciecie == False):
+        if ((przedPrzedOstatnia > przedOstatnia) and (przedOstatnia > ostatnia)):
+            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
+            oczekiwanieNaPrzeciecie = True
+            data = datetime.datetime.now()
+            print ("Zamknieto pozycje ze wzgledu na hamujacy trend" + str(data))
+    if (sprzedane == True and kupione == False and oczekiwanieNaPrzeciecie == False):
+        if ((przedPrzedOstatnia < przedOstatnia) and (przedOstatnia < ostatnia)):
+            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
+            oczekiwanieNaPrzeciecie = True
+            data = datetime.datetime.now()
+            print ("Zamknieto pozycje ze wzgledu na hamujacy trend" + str(data))
+
+        ### tu sie dzieja grube rzeczy jesli to bym zostawil ###
+
+    ############################################################################################################
+
+    # if (oczekiwanieNaPrzeciecie == True):
+    #     if (kupione == True):
+    #         if (przedPrzedOstatnia < przedOstatnia and przedOstatnia < ostatnia):
+    #             czyOtwarda = sprawdzOtwartePoz()
+
+    #             Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
+    #             data = datetime.datetime.now()
+    #             print(str("Kup wywołane z hamujacym trendem: " + str(data)))
+
+    #             oczekiwanieNaPrzeciecie = False
+    #     if (sprzedane == True):
+    #         if (przedPrzedOstatnia > przedOstatnia and przedOstatnia > ostatnia):
+    #             czyOtwarda = sprawdzOtwartePoz()
+
+    #             Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
+    #             data = datetime.datetime.now()
+    #             print(str("Sprzedaj wywołane z hamujacym trendem: " + str(data)))
+
+    #             oczekiwanieNaPrzeciecie = False
+
+
 
 
 def hekinBreakout():
@@ -140,7 +191,7 @@ def hekinBreakout():
     global paraWalutowa
 
     heikinAshi = []
-    timeFrame = "M1"
+    timeFrame = "M15"
 
     movingAV = 0
     dlugosc = 21
@@ -148,6 +199,7 @@ def hekinBreakout():
     kupione = False
     sprzedane = False
 
+    godzina = datetime.datetime.now().hour
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
 
@@ -159,7 +211,7 @@ def hekinBreakout():
                         float(response.json()['candles'][i]['mid']['c']) + 
                         float(response.json()['candles'][i]['mid']['o'])) / 4
 
-        heikinClose = round(heikinClose, 3)
+        # heikinClose = round(heikinClose, 3)
         heikinAshi.append(heikinClose)
 
         movingAV += heikinClose
@@ -171,12 +223,17 @@ def hekinBreakout():
     # ostatni heikinClose
     ostatnia = heikinAshi[-1]
 
+    przedPrzedOstatnia = heikinAshi[-3]
+
     # print("Heikin Ashi: ", heikinAshi)
     # print("Moving Average: ", movingAV)
     # print("Przedostatnia: ", przedOstatnia)
     # print("Ostatnia: ", ostatnia)
 
-    transakcja(przedOstatnia, ostatnia, movingAV)
+    if (godzina < 23 and godzina > 9):
+        transakcja(przedPrzedOstatnia=przedPrzedOstatnia, przedOstatnia=przedOstatnia, ostatnia=ostatnia, movingAV=movingAV)
+    else:
+        print("Rynek nie płynny. Bot nie bedzie handlowac")
 
 
 
