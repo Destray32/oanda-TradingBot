@@ -31,8 +31,6 @@ sprzedane = False
 oczekiwanieNaPrzeciecie = False
 
 # body do kupowania waluty
-bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
-bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
 bodyCloseLong = '{"longUnits": "ALL"}'
 bodyCloseShort = '{"shortUnits": "ALL"}'
 
@@ -69,18 +67,10 @@ def sprawdzOtwartePoz():
 def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
     global sprzedane
     global kupione
-    global bodyBuy
-    global bodySell
     global bodyCloseLong
     global bodyCloseShort
     global paraWalutowa
     global oczekiwanieNaPrzeciecie
-
-    bodyBuyText = json.loads(bodyBuy)
-    bodyBuyText = json.dumps(bodyBuyText)
-
-    bodySellText = json.loads(bodySell)
-    bodySellText = json.dumps(bodySellText)
 
     bodyCloseLongText = json.loads(bodyCloseLong)
     bodyCloseLongText = json.dumps(bodyCloseLongText)
@@ -88,74 +78,33 @@ def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
     bodyCloseShortText = json.loads(bodyCloseShort)
     bodyCloseShortText = json.dumps(bodyCloseShortText)
 
+    czyOtwarda = sprawdzOtwartePoz()
 
-    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and sprzedane == False):
-        print(sprzedane, kupione)
-        if (kupione == True):
-            # TODO: przetestować czy te zamykanie dobrze działa gdy rynek bedzie otwarty
-            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
+    ### TODO: Nowy sposób na handlowanie. Do przetestowania!
 
-            czyOtwarda = sprawdzOtwartePoz()
 
-            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Zmiana pozycji na sprzedaj: " + str(data)))
+    # sprzedawanie
+    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and czyOtwarda == False):
+        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "LIMIT", "takeProfitOnFill": {"price": "{str(ostatnia-0.0010)}"}, "stopLossOnFill": {"price": "{str(ostatnia+0.0010)}"}}}}}'
 
-            kupione = False
-            sprzedane = True
-            oczekiwanieNaPrzeciecie = False
-        else:
-            czyOtwarda = sprawdzOtwartePoz()
+        bodySellText = json.loads(bodySell)
+        bodySellText = json.dumps(bodySellText)
 
-            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Sprzedaj: " + str(data)))
+        Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
 
-            sprzedane = True
-            oczekiwanieNaPrzeciecie = False
         return
     
-    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and kupione == False):
-        print(sprzedane, kupione)
-        if (sprzedane == True):
-            # TODO: przetestować czy te zamykanie dobrze działa gdy rynek bedzie otwarty
-            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
+    # kupowanie
+    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and czyOtwarda == False):
+        bodyBuy = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "LIMIT", "takeProfitOnFill": {"price": "{str(ostatnia+0.0010)}"}, "stopLossOnFill": {"price": "{str(ostatnia-0.0010)}"}}}}}'
 
-            czyOtwarda = sprawdzOtwartePoz()
+        bodyBuyText = json.loads(bodyBuy)
+        bodyBuyText = json.dumps(bodyBuyText)
 
-            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Zmiana pozycji na kup: " + str(data)))
+        Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
 
-            sprzedane = False
-            kupione = True
-            oczekiwanieNaPrzeciecie = False
-        else:
-            czyOtwarda = sprawdzOtwartePoz()
-
-            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Kup: " + str(data)))
-
-            kupione = True
-            oczekiwanieNaPrzeciecie = False
         return
 
-    ## nowy kod - rozpoznawanie wychamowywania trendu i wracanie spowortem gdy wychamowywanie 
-    # jest falszywe - wersja eksperymentalna
-
-    if (kupione == True and sprzedane == False and oczekiwanieNaPrzeciecie == False):
-        if ((przedPrzedOstatnia > przedOstatnia) and (przedOstatnia > ostatnia)):
-            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
-            oczekiwanieNaPrzeciecie = True
-            data = datetime.datetime.now()
-            print ("Zamknieto pozycje ze wzgledu na hamujacy trend" + str(data))
-    if (sprzedane == True and kupione == False and oczekiwanieNaPrzeciecie == False):
-        if ((przedPrzedOstatnia < przedOstatnia) and (przedOstatnia < ostatnia)):
-            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa=paraWalutowa)
-            oczekiwanieNaPrzeciecie = True
-            data = datetime.datetime.now()
-            print ("Zamknieto pozycje ze wzgledu na hamujacy trend" + str(data))
 
         ### tu sie dzieja grube rzeczy jesli to bym zostawil ###
 
