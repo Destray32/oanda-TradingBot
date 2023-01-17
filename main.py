@@ -8,11 +8,6 @@ import os
 from otwieranie import Kupowanie, Sprzedawanie
 from zamykanie import ZamknijPoz
 
-# TODO: INFO - pozmieniałem sposób sprawdzania otwartych pozycji i warunek wejscia na pozycje dla long i short
-# TODO: Zmienić sposób zamyniakia pozycji:
-# Jesli jestesmy na długiej pozycji to zamykamy ją gdy świeczka zamknie się jako czerwona i na odwrót
-# dla pozycji krótkiej
-
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN')
 ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
 
@@ -51,6 +46,7 @@ def sprawdzOtwartePoz():
     res = requests.get(f"https://api-fxpractice.oanda.com/v3/accounts/{ACCOUNT_ID}/openPositions", headers=headers)
 
     pozycje = res.json()
+    # print(pozycje)
     pozycje = pozycje['positions']
     if (len(pozycje) == 0):
         # print("Nie ma otwartych pozycji")
@@ -81,56 +77,72 @@ def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
     czyOtwarda = sprawdzOtwartePoz()
 
     ### TODO: Nowy sposób na handlowanie. Do przetestowania!
+    print (czyOtwarda)
 
 
     # sprzedawanie
-    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and czyOtwarda == False):
-        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "LIMIT", "takeProfitOnFill": {"price": "{str(ostatnia-0.0010)}"}, "stopLossOnFill": {"price": "{str(ostatnia+0.0010)}"}}}}}'
+    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and sprzedane == False):
+
+        ostatnia2 = ostatnia - 0.0015
+        ostatnia2 = round(ostatnia2, 5)
+        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}}}}}'
 
         bodySellText = json.loads(bodySell)
         bodySellText = json.dumps(bodySellText)
 
-        Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
+        if (kupione == True):
+            ZamknijPoz(ACCOUNT_ID=ACCOUNT_ID, bodyCloseLongText=bodyCloseLongText, bodyCloseShortText=bodyCloseShortText, paraWalutowa=paraWalutowa, headers=headers)
+
+            czyOtwarda = sprawdzOtwartePoz()
+
+            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
+            data = datetime.datetime.now()
+            print(str("Zmiana pozycji na sprz: " + str(data)))
+
+            sprzedane = True
+            kupione = False
+        else:
+            czyOtwarda = sprawdzOtwartePoz()
+
+            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
+            data = datetime.datetime.now()
+            print(str("Sprzedano: " + str(data)))
+
+            sprzedane = True
 
         return
     
     # kupowanie
-    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and czyOtwarda == False):
-        bodyBuy = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "LIMIT", "takeProfitOnFill": {"price": "{str(ostatnia+0.0010)}"}, "stopLossOnFill": {"price": "{str(ostatnia-0.0010)}"}}}}}'
+    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and kupione == False):
+
+        ostatnia2 = ostatnia + 0.0015
+        ostatnia2 = round(ostatnia2, 5)
+        bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}}}}}'
 
         bodyBuyText = json.loads(bodyBuy)
         bodyBuyText = json.dumps(bodyBuyText)
 
-        Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
+        if (sprzedane == True):
+            ZamknijPoz(ACCOUNT_ID=ACCOUNT_ID, bodyCloseLongText=bodyCloseLongText, bodyCloseShortText=bodyCloseShortText, paraWalutowa=paraWalutowa, headers=headers)
+
+            czyOtwarda = sprawdzOtwartePoz()
+
+            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
+            data = datetime.datetime.now()
+            print(str("Zmiana pozycji na kup: " + str(data)))
+
+            sprzedane = False
+            kupione = True
+        else:
+            czyOtwarda = sprawdzOtwartePoz()
+
+            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
+            data = datetime.datetime.now()
+            print(str("Kup: " + str(data)))
+
+            kupione = True
 
         return
-
-
-        ### tu sie dzieja grube rzeczy jesli to bym zostawil ###
-
-    ############################################################################################################
-
-    # if (oczekiwanieNaPrzeciecie == True):
-    #     if (kupione == True):
-    #         if (przedPrzedOstatnia < przedOstatnia and przedOstatnia < ostatnia):
-    #             czyOtwarda = sprawdzOtwartePoz()
-
-    #             Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
-    #             data = datetime.datetime.now()
-    #             print(str("Kup wywołane z hamujacym trendem: " + str(data)))
-
-    #             oczekiwanieNaPrzeciecie = False
-    #     if (sprzedane == True):
-    #         if (przedPrzedOstatnia > przedOstatnia and przedOstatnia > ostatnia):
-    #             czyOtwarda = sprawdzOtwartePoz()
-
-    #             Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
-    #             data = datetime.datetime.now()
-    #             print(str("Sprzedaj wywołane z hamujacym trendem: " + str(data)))
-
-    #             oczekiwanieNaPrzeciecie = False
-
-
 
 
 def hekinBreakout():
