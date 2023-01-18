@@ -3,6 +3,11 @@ import json
 import threading
 import datetime
 import os
+import talib
+import math
+
+import pandas as pd
+import numpy as np
 
 
 from otwieranie import Kupowanie, Sprzedawanie
@@ -35,11 +40,6 @@ headers = {
     'Authorization': f'Bearer {ACCESS_TOKEN}',
 }
 
-def LiczenieMA(movingAV, dlugosc):
-    movingAV /= dlugosc
-    # movingAV = round(movingAV, 3)
-
-    return movingAV
 
 # funkcja sprawdza czy istnieje otwarta pozycja zwraca True lub False
 def sprawdzOtwartePoz():
@@ -61,12 +61,7 @@ def sprawdzOtwartePoz():
             return False
 
 def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
-    global sprzedane
-    global kupione
-    global bodyCloseLong
-    global bodyCloseShort
-    global paraWalutowa
-    global oczekiwanieNaPrzeciecie
+
 
     bodyCloseLongText = json.loads(bodyCloseLong)
     bodyCloseLongText = json.dumps(bodyCloseLongText)
@@ -76,73 +71,50 @@ def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
 
     czyOtwarda = sprawdzOtwartePoz()
 
-    ### TODO: Nowy sposób na handlowanie. Do przetestowania!
-    print (czyOtwarda)
+    return
+
+def sredniaWazona(swieczki, dlugosc):
+    sumaSwieczek = 0
+    sumaDlugosci = 0
+    dlugoscKopia = dlugosc
+
+    for i in range(int(dlugosc), 0, -1):
+        sumaDlugosci = sumaDlugosci + i
+
+    if (isinstance(swieczki, list)):
+    # swieczki musza byc w kolejności od najwcześniejszej do najpozniejszej
+        swieczki.reverse()
+        for swieczka in swieczki:
+            sumaSwieczek = sumaSwieczek + (float(swieczka) * dlugoscKopia)
+            dlugoscKopia = dlugoscKopia - 1
+        return round((sumaSwieczek / sumaDlugosci), 5)
+    else:
+        return round((swieczki / sumaDlugosci), 5)
+
+def weighted_moving_average(series, lookback = None) -> float:
+    if not lookback:
+        lookback = len(series)
+    if len(series) == 0:
+        return 0
+    assert 0 < lookback <= len(series)
+
+    wma = 0
+    lookback_offset = len(series) - lookback
+    for index in range(lookback + lookback_offset - 1, lookback_offset - 1, -1):
+        weight = index - lookback_offset + 1
+        wma += series[index] * weight
+    return wma / ((lookback ** 2 + lookback) / 2)
 
 
-    # sprzedawanie
-    if ((przedOstatnia < movingAV) and (ostatnia < movingAV) and sprzedane == False):
-
-        ostatnia2 = ostatnia - 0.0015
-        ostatnia2 = round(ostatnia2, 5)
-        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}}}}}'
-
-        bodySellText = json.loads(bodySell)
-        bodySellText = json.dumps(bodySellText)
-
-        if (kupione == True):
-            ZamknijPoz(ACCOUNT_ID=ACCOUNT_ID, bodyCloseLongText=bodyCloseLongText, bodyCloseShortText=bodyCloseShortText, paraWalutowa=paraWalutowa, headers=headers)
-
-            czyOtwarda = sprawdzOtwartePoz()
-
-            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Zmiana pozycji na sprz: " + str(data)))
-
-            sprzedane = True
-            kupione = False
-        else:
-            czyOtwarda = sprawdzOtwartePoz()
-
-            Sprzedawanie(czyOtwarda, bodySellText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Sprzedano: " + str(data)))
-
-            sprzedane = True
-
-        return
-    
-    # kupowanie
-    if ((przedOstatnia > movingAV) and (ostatnia > movingAV) and kupione == False):
-
-        ostatnia2 = ostatnia + 0.0015
-        ostatnia2 = round(ostatnia2, 5)
-        bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}}}}}'
-
-        bodyBuyText = json.loads(bodyBuy)
-        bodyBuyText = json.dumps(bodyBuyText)
-
-        if (sprzedane == True):
-            ZamknijPoz(ACCOUNT_ID=ACCOUNT_ID, bodyCloseLongText=bodyCloseLongText, bodyCloseShortText=bodyCloseShortText, paraWalutowa=paraWalutowa, headers=headers)
-
-            czyOtwarda = sprawdzOtwartePoz()
-
-            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Zmiana pozycji na kup: " + str(data)))
-
-            sprzedane = False
-            kupione = True
-        else:
-            czyOtwarda = sprawdzOtwartePoz()
-
-            Kupowanie(czyOtwarda, bodyBuyText, headers, ACCOUNT_ID)
-            data = datetime.datetime.now()
-            print(str("Kup: " + str(data)))
-
-            kupione = True
-
-        return
+def hull_moving_average(series, lookback) -> float:
+    assert lookback > 0
+    hma_series = []
+    for k in range(int(lookback ** 0.5), -1, -1):
+        s = series[:-k or None]
+        wma_half = weighted_moving_average(s, min(lookback // 2, len(s)))
+        wma_full = weighted_moving_average(s, min(lookback, len(s)))
+        hma_series.append(wma_half * 2 - wma_full)
+    return weighted_moving_average(hma_series)
 
 
 def hekinBreakout():
@@ -151,50 +123,23 @@ def hekinBreakout():
 
     global paraWalutowa
 
-    heikinAshi = []
-    timeFrame = "M15"
+    timeFrame = "M5"
+    zamknieciaSwieczek = []
 
-    movingAV = 0
-    dlugosc = 21
-
-    kupione = False
-    sprzedane = False
-
-    godzina = datetime.datetime.now().hour
+    dlugosc = 30
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
 
     for i in range(0, dlugosc):
+        zamkSwieczki = response.json()['candles'][i]['mid']['c']
+        zamkSwieczki = float(zamkSwieczki)
+        zamknieciaSwieczek.append(zamkSwieczki)
 
-        # kalkulowanie Heikin Ashi
-        heikinClose = (float(response.json()['candles'][i]['mid']['h']) + 
-                        float(response.json()['candles'][i]['mid']['l']) + 
-                        float(response.json()['candles'][i]['mid']['c']) + 
-                        float(response.json()['candles'][i]['mid']['o'])) / 4
+    dl = 30
 
-        # heikinClose = round(heikinClose, 3)
-        heikinAshi.append(heikinClose)
-
-        movingAV += heikinClose
- 
-    movingAV = LiczenieMA(movingAV, dlugosc)
-
-    # przed ostatni heikinClose
-    przedOstatnia = heikinAshi[-2]
-    # ostatni heikinClose
-    ostatnia = heikinAshi[-1]
-
-    przedPrzedOstatnia = heikinAshi[-3]
-
-    # print("Heikin Ashi: ", heikinAshi)
-    # print("Moving Average: ", movingAV)
-    # print("Przedostatnia: ", przedOstatnia)
-    # print("Ostatnia: ", ostatnia)
-
-    if (godzina < 23 and godzina > 9):
-        transakcja(przedPrzedOstatnia=przedPrzedOstatnia, przedOstatnia=przedOstatnia, ostatnia=ostatnia, movingAV=movingAV)
-    else:
-        print("Rynek nie płynny. Bot nie bedzie handlowac")
+    hma = hull_moving_average(zamknieciaSwieczek, dlugosc)
+    hma = round(hma, 5)
+    print(hma)
 
 
 
