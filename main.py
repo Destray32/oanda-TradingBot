@@ -4,10 +4,8 @@ import threading
 import datetime
 import os
 import talib
-import math
 
 import pandas as pd
-import numpy as np
 
 
 from otwieranie import Kupowanie, Sprzedawanie
@@ -25,10 +23,14 @@ global bodySell
 global bodyCloseLong
 global bodyCloseShort
 global paraWalutowa
+global kWieksze
+global dWieksze
 paraWalutowa = "EUR_USD"
 kupione = False
 sprzedane = False
 oczekiwanieNaPrzeciecie = False
+kWieksze = False
+dWieksze = True
 
 # body do kupowania waluty
 bodyCloseLong = '{"longUnits": "ALL"}'
@@ -116,31 +118,76 @@ def hull_moving_average(series, lookback) -> float:
         hma_series.append(wma_half * 2 - wma_full)
     return weighted_moving_average(hma_series)
 
+def kierunekPrzeciecia(liniaK, liniaD):
+    """
+    Sprawdza kierunek w jakim przecięty jest wskaźnik stochastic. \n
+    \t 1 = przecięty w góre 2 = przecięty w dół
+    """
+
+    if (liniaK > liniaD):
+        return 1
+    elif(liniaK < liniaD):
+        return 0
+
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
     threading.Timer(2.0, hekinBreakout).start()
 
     global paraWalutowa
+    global kWieksze
+    global dWieksze
 
     timeFrame = "M5"
     zamknieciaSwieczek = []
 
+    # na dlugosci 30 wskazniki dobrze dzialaja
     dlugosc = 30
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
 
     for i in range(0, dlugosc):
         zamkSwieczki = response.json()['candles'][i]['mid']['c']
+
         zamkSwieczki = float(zamkSwieczki)
         zamknieciaSwieczek.append(zamkSwieczki)
 
-    dl = 30
 
     hma = hull_moving_average(zamknieciaSwieczek, dlugosc)
     hma = round(hma, 5)
-    print(hma)
+    # print(hma)
 
+    # make a panadas dataframe with the data from the API
+    df = pd.DataFrame(response.json()['candles'])
+    
+    # convert df to floats
+    df['mid'] = df['mid'].apply(lambda x: {k: float(v) for k, v in x.items()})
+
+    df['14-low'] = df['mid'].apply(lambda x: x['l']).rolling(window=14).min()
+    df['14-high'] = df['mid'].apply(lambda x: x['h']).rolling(window=14).max()
+    df['%K'] = 100 * ((df['mid'].apply(lambda x: x['c']) - df['14-low']) / (df['14-high'] - df['14-low']))
+    
+    df['%K'] = talib.SMA(df['%K'], timeperiod=6)
+    df['%D'] = df['%K'].rolling(window=3).mean()
+
+    liniaK = df['%K'][dlugosc-1]
+    liniaD = df['%D'][dlugosc-1]
+
+    # wychwytywanie przecięcia lini stochastic
+    if (df['%K'][29] > df['%D'][29] and dWieksze == True):
+        data = datetime.datetime.now()
+        kWieksze = True
+        dWieksze = False
+        print("Przecięcie stochastic: ", data)
+    elif(df['%K'][29] < df['%D'][29] and kWieksze == True):
+        data = datetime.datetime.now()
+        print("Przecięcie stochastic: ", data)
+        dWieksze = True
+        kWieksze = False
+
+    kierunekStoch = kierunekPrzeciecia(liniaK, liniaD)
+    print(kierunekStoch)
+        
 
 
 def main():
