@@ -29,12 +29,14 @@ paraWalutowa = "EUR_USD"
 kupione = False
 sprzedane = False
 oczekiwanieNaPrzeciecie = False
-kWieksze = False
-dWieksze = True
+kWieksze = True
+dWieksze = False
 
 # body do kupowania waluty
 bodyCloseLong = '{"longUnits": "ALL"}'
 bodyCloseShort = '{"shortUnits": "ALL"}'
+
+# body do kupowania waluty
 
 
 headers = {
@@ -62,16 +64,32 @@ def sprawdzOtwartePoz():
             print("Nie ma otwartych pozycji")
             return False
 
-def transakcja(przedPrzedOstatnia, przedOstatnia, ostatnia, movingAV):
-
+def transakcja(ostatnia):
+    global kupione
 
     bodyCloseLongText = json.loads(bodyCloseLong)
     bodyCloseLongText = json.dumps(bodyCloseLongText)
 
-    bodyCloseShortText = json.loads(bodyCloseShort)
-    bodyCloseShortText = json.dumps(bodyCloseShortText)
+    czyOtwarta = sprawdzOtwartePoz()
 
-    czyOtwarda = sprawdzOtwartePoz()
+    if (czyOtwarta == False):
+        kupione = False
+
+    if (kupione == False and czyOtwarta == False):
+        ostatnia2 = ostatnia + 0.0011
+        ostatnia2 = round(ostatnia2, 5)
+
+        ostatnia3 = ostatnia - 0.0005
+        ostatnia3 = round(ostatnia3, 5)
+
+        bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+
+        bodyBuyText = json.loads(bodyBuy)
+        bodyBuyText = json.dumps(bodyBuyText)
+
+        status = Kupowanie(czyOtwarta, bodyBuyText, headers, ACCOUNT_ID)
+        if (status):
+            kupione = True
 
     return
 
@@ -107,7 +125,6 @@ def weighted_moving_average(series, lookback = None) -> float:
         wma += series[index] * weight
     return wma / ((lookback ** 2 + lookback) / 2)
 
-
 def hull_moving_average(series, lookback) -> float:
     assert lookback > 0
     hma_series = []
@@ -121,7 +138,7 @@ def hull_moving_average(series, lookback) -> float:
 def kierunekPrzeciecia(liniaK, liniaD):
     """
     Sprawdza kierunek w jakim przecięty jest wskaźnik stochastic. \n
-    \t 1 = przecięty w góre 2 = przecięty w dół
+    \t 1 = przecięty w góre 0 = przecięty w dół
     """
 
     if (liniaK > liniaD):
@@ -129,16 +146,46 @@ def kierunekPrzeciecia(liniaK, liniaD):
     elif(liniaK < liniaD):
         return 0
 
+def sygnalStoch(kierunekPrzeciecia, liniaK, liniaD):
+    """
+    Funkcja sprawdzajaca czy warunki na wskazniku stochastic sa sprzyjajace zawarciu transakcji
+    """
+    if(kierunekPrzeciecia == 1 and liniaK < 50.0 and liniaD < 50.0):
+        return True
+    else:
+        return False
+
+def sygnalHull(hma, przedOst, ostatnia):
+    """
+    Funckja sprawdza czy przed ostatnie zamkniecie swieczki i ostatnie zamkniecie znajduje sie /t
+    ponad wskaznikiem HMA
+    """
+    if(przedOst > hma and ostatnia > hma):
+        return True
+    else:
+        return False
+
+def sygnalSprzedaz(hma, przedOst, ostatnia):
+    """
+    Funckja sprawdza czy przed ostatnie zamkniecie swieczki i ostatnie zamkniecie znajduje sie /t
+    pod wskaznikiem HMA. Nalezy wtedy zamknąć swoja pozycje
+    """
+    if(przedOst < hma and ostatnia < hma):
+        return True
+    else:
+        return False
+
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
     threading.Timer(2.0, hekinBreakout).start()
 
     global paraWalutowa
+    global kupione
     global kWieksze
     global dWieksze
 
-    timeFrame = "M5"
+    timeFrame = "M15"
     zamknieciaSwieczek = []
 
     # na dlugosci 30 wskazniki dobrze dzialaja
@@ -186,10 +233,27 @@ def hekinBreakout():
         kWieksze = False
 
     kierunekStoch = kierunekPrzeciecia(liniaK, liniaD)
-    print(kierunekStoch)
+    sSto = sygnalStoch(kierunekStoch, liniaK, liniaD)
+    sHull = sygnalHull(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
+    sSprzedaz = sygnalSprzedaz(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
+    
+    if (sSto and sHull and sSprzedaz == False):
+        # date = datetime.datetime.now()
+        # print("Warunki do kupienia: ", date)
+
+        transakcja(zamknieciaSwieczek[-1])
+
+    if (sSprzedaz == True):
+        bodyCloseLongText = json.loads(bodyCloseLong)
+        bodyCloseLongText = json.dumps(bodyCloseLongText)
+
+        bodyCloseShortText = json.loads(bodyCloseShort)
+        bodyCloseShortText = json.dumps(bodyCloseShortText)
+
+        ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa)
+        kupione = False
+
         
-
-
 def main():
     hekinBreakout()
 
