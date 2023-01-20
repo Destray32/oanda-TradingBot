@@ -25,19 +25,18 @@ global bodyCloseShort
 global paraWalutowa
 global kWieksze
 global dWieksze
-paraWalutowa = "EUR_USD"
+global czyWystopowany
+paraWalutowa = "GBP_USD"
 kupione = False
 sprzedane = False
 oczekiwanieNaPrzeciecie = False
 kWieksze = True
 dWieksze = False
+czyWystopowany = False
 
 # body do kupowania waluty
 bodyCloseLong = '{"longUnits": "ALL"}'
 bodyCloseShort = '{"shortUnits": "ALL"}'
-
-# body do kupowania waluty
-
 
 headers = {
     'Content-Type': 'application/json',
@@ -58,14 +57,15 @@ def sprawdzOtwartePoz():
 
     for poz in pozycje:
         if (poz['instrument'] == paraWalutowa):
-            print("Jest otwarta pozycja")
+            # print("Jest otwarta pozycja")
             return True
         else:
-            print("Nie ma otwartych pozycji")
+            # print("Nie ma otwartych pozycji")
             return False
 
-def transakcja(ostatnia):
+def transakcjaKup(ostatnia):
     global kupione
+    global czyWystopowany
 
     bodyCloseLongText = json.loads(bodyCloseLong)
     bodyCloseLongText = json.dumps(bodyCloseLongText)
@@ -73,10 +73,17 @@ def transakcja(ostatnia):
     czyOtwarta = sprawdzOtwartePoz()
 
     if (czyOtwarta == False):
-        kupione = False
+        # Teoria do przetestowania, jesli pozycja nie jest otwarta a było coś kupione to znaczy
+        # że pozycja dostała stop lossa
+        if (kupione == True):
+            czyWystopowany = True
+            kupione = False
+        else:
+            czyWystopowany = False
+            kupione = False
 
     if (kupione == False and czyOtwarta == False):
-        ostatnia2 = ostatnia + 0.0011
+        ostatnia2 = ostatnia + 0.00011
         ostatnia2 = round(ostatnia2, 5)
 
         ostatnia3 = ostatnia - 0.0005
@@ -90,6 +97,43 @@ def transakcja(ostatnia):
         status = Kupowanie(czyOtwarta, bodyBuyText, headers, ACCOUNT_ID)
         if (status):
             kupione = True
+
+    return
+
+def transakcjaSprzedaj(ostatnia):
+    global sprzedane
+    global czyWystopowany
+
+    bodyCloseShortText = json.loads(bodyCloseShort)
+    bodyCloseShortText = json.dumps(bodyCloseShortText)
+
+    czyOtwarta = sprawdzOtwartePoz()
+
+    if (czyOtwarta == False):
+    # Teoria do przetestowania, jesli pozycja nie jest otwarta a było coś kupione to znaczy
+    # że pozycja dostała stop lossa
+        if (sprzedane == True):
+            czyWystopowany = True
+            sprzedane = False
+        else:
+            czyWystopowany = False
+            sprzedane = False
+
+    if (sprzedane == False and czyOtwarta == False):
+        ostatnia2 = ostatnia - 0.00011
+        ostatnia2 = round(ostatnia2, 5)
+
+        ostatnia3 = ostatnia + 0.0005
+        ostatnia3 = round(ostatnia3, 5)
+
+        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+
+        bodySellText = json.loads(bodySell)
+        bodySellText = json.dumps(bodySellText)
+
+        status = Sprzedawanie(czyOtwarta, bodySellText, headers, ACCOUNT_ID)
+        if (status):
+            sprzedane = True
 
     return
 
@@ -150,10 +194,12 @@ def sygnalStoch(kierunekPrzeciecia, liniaK, liniaD):
     """
     Funkcja sprawdzajaca czy warunki na wskazniku stochastic sa sprzyjajace zawarciu transakcji
     """
-    if(kierunekPrzeciecia == 1 and liniaK < 50.0 and liniaD < 50.0):
-        return True
+    if(kierunekPrzeciecia == 1 and liniaK < 20.0 and liniaD < 20.0):
+        return "long"
+    elif(kierunekPrzeciecia == 0 and liniaK > 80.0 and liniaD > 80.0):
+        return "short"
     else:
-        return False
+        return "brak"
 
 def sygnalHull(hma, przedOst, ostatnia):
     """
@@ -161,16 +207,22 @@ def sygnalHull(hma, przedOst, ostatnia):
     ponad wskaznikiem HMA
     """
     if(przedOst > hma and ostatnia > hma):
-        return True
-    else:
-        return False
+        return "long"
+    elif(przedOst < hma and ostatnia < hma):
+        return "short"
 
-def sygnalSprzedaz(hma, przedOst, ostatnia):
+def longWyjscie(hma, przedOst, ostatnia):
     """
     Funckja sprawdza czy przed ostatnie zamkniecie swieczki i ostatnie zamkniecie znajduje sie /t
     pod wskaznikiem HMA. Nalezy wtedy zamknąć swoja pozycje
     """
     if(przedOst < hma and ostatnia < hma):
+        return True
+    else:
+        return False
+
+def shortWyjscie(hma, przedOst, ostatnia):
+    if(przedOst > hma and ostatnia > hma):
         return True
     else:
         return False
@@ -182,10 +234,11 @@ def hekinBreakout():
 
     global paraWalutowa
     global kupione
+    global sprzedane
     global kWieksze
     global dWieksze
 
-    timeFrame = "M15"
+    timeFrame = "M1"
     zamknieciaSwieczek = []
 
     # na dlugosci 30 wskazniki dobrze dzialaja
@@ -235,15 +288,19 @@ def hekinBreakout():
     kierunekStoch = kierunekPrzeciecia(liniaK, liniaD)
     sSto = sygnalStoch(kierunekStoch, liniaK, liniaD)
     sHull = sygnalHull(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
-    sSprzedaz = sygnalSprzedaz(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
+    sLongWyjscie = longWyjscie(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
+    sShortWyjscie = shortWyjscie(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
     
-    if (sSto and sHull and sSprzedaz == False):
+    if (sSto == "long" and sHull == "long"):
         # date = datetime.datetime.now()
         # print("Warunki do kupienia: ", date)
 
-        transakcja(zamknieciaSwieczek[-1])
+        transakcjaKup(zamknieciaSwieczek[-1])
 
-    if (sSprzedaz == True):
+    if (sSto == "short" and sHull == "short"):
+        transakcjaSprzedaj(zamknieciaSwieczek[-1])
+        
+    if (sLongWyjscie == True and kupione == True):
         bodyCloseLongText = json.loads(bodyCloseLong)
         bodyCloseLongText = json.dumps(bodyCloseLongText)
 
@@ -252,6 +309,16 @@ def hekinBreakout():
 
         ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa)
         kupione = False
+
+    if (sShortWyjscie == True and sprzedane == True):
+        bodyCloseLongText = json.loads(bodyCloseLong)
+        bodyCloseLongText = json.dumps(bodyCloseLongText)
+
+        bodyCloseShortText = json.loads(bodyCloseShort)
+        bodyCloseShortText = json.dumps(bodyCloseShortText)
+
+        ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa)
+        sprzedane = False
 
         
 def main():
