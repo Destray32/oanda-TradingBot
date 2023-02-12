@@ -10,6 +10,7 @@ import pandas as pd
 
 from otwieranie import Kupowanie, Sprzedawanie
 from zamykanie import ZamknijPoz
+from pobieranieDanych import PobranieDanych
 
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN')
 ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
@@ -26,13 +27,17 @@ global paraWalutowa
 global kWieksze
 global dWieksze
 global czyWystopowany
-paraWalutowa = "AUD_JPY"
+global czyNowaSwieca
+global kopiaOstatniej
+paraWalutowa = "EUR_USD"
 kupione = False
 sprzedane = False
 oczekiwanieNaPrzeciecie = False
 kWieksze = True
 dWieksze = False
 czyWystopowany = False
+czyNowaSwieca = False
+kopiaOstatniej = 0
 
 # body do kupowania waluty
 bodyCloseLong = '{"longUnits": "ALL"}'
@@ -227,6 +232,8 @@ def shortWyjscie(hma, przedOst, ostatnia):
     else:
         return False
 
+def chiko_span(data):
+    return data.Close.shift(-1)
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
@@ -237,8 +244,10 @@ def hekinBreakout():
     global sprzedane
     global kWieksze
     global dWieksze
+    global czyNowaSwieca
+    global kopiaOstatniej
 
-    timeFrame = "M5"
+    timeFrame = "M1"
     zamknieciaSwieczek = []
 
     # na dlugosci 30 wskazniki dobrze dzialaja
@@ -246,79 +255,19 @@ def hekinBreakout():
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
 
-    for i in range(0, dlugosc):
-        zamkSwieczki = response.json()['candles'][i]['mid']['c']
+    #TODO: znaleźć sposob na sprawdzenie czy jest nowa swieczka
 
-        zamkSwieczki = float(zamkSwieczki)
-        zamknieciaSwieczek.append(zamkSwieczki)
+    #Q: jak sprawdzić czy pojawiła się nowa świeczka?
+    #A: sprawdzic czy ostatnia swieczka jest taka sama jak ostatnia zapisana w zmiennej globalnej
+
+    # sprawdza czy jest nowa swieczka
+    # działa, ale jest dlugi okres w ktorym nie pojawia sie zadna swieczka i wtedy warunek ten jest caly czas prawdziwy
+    if(response.json()["candles"][-1]["complete"] == True):
+        czyNowaSwieca = True
+        print("Nowa swieczka")
 
 
-    hma = hull_moving_average(zamknieciaSwieczek, dlugosc)
-    hma = round(hma, 5)
-    # print(hma)
 
-    # make a panadas dataframe with the data from the API
-    df = pd.DataFrame(response.json()['candles'])
-    
-    # convert df to floats
-    df['mid'] = df['mid'].apply(lambda x: {k: float(v) for k, v in x.items()})
-
-    df['14-low'] = df['mid'].apply(lambda x: x['l']).rolling(window=14).min()
-    df['14-high'] = df['mid'].apply(lambda x: x['h']).rolling(window=14).max()
-    df['%K'] = 100 * ((df['mid'].apply(lambda x: x['c']) - df['14-low']) / (df['14-high'] - df['14-low']))
-    
-    df['%K'] = talib.SMA(df['%K'], timeperiod=6)
-    df['%D'] = df['%K'].rolling(window=3).mean()
-
-    liniaK = df['%K'][dlugosc-1]
-    liniaD = df['%D'][dlugosc-1]
-
-    # wychwytywanie przecięcia lini stochastic
-    if (df['%K'][29] > df['%D'][29] and dWieksze == True):
-        data = datetime.datetime.now()
-        kWieksze = True
-        dWieksze = False
-        print("Przecięcie stochastic: ", data)
-    elif(df['%K'][29] < df['%D'][29] and kWieksze == True):
-        data = datetime.datetime.now()
-        print("Przecięcie stochastic: ", data)
-        dWieksze = True
-        kWieksze = False
-
-    kierunekStoch = kierunekPrzeciecia(liniaK, liniaD)
-    sSto = sygnalStoch(kierunekStoch, liniaK, liniaD)
-    sHull = sygnalHull(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
-    sLongWyjscie = longWyjscie(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
-    sShortWyjscie = shortWyjscie(hma, zamknieciaSwieczek[-2], zamknieciaSwieczek[-1])
-    
-    if (sSto == "long" and sHull == "long"):
-        # date = datetime.datetime.now()
-        # print("Warunki do kupienia: ", date)
-
-        transakcjaKup(zamknieciaSwieczek[-1])
-
-    # if (sSto == "short" and sHull == "short"):
-    #     transakcjaSprzedaj(zamknieciaSwieczek[-1])
-
-    if (sLongWyjscie == True and kupione == True):
-        bodyCloseLongText = json.loads(bodyCloseLong)
-        bodyCloseLongText = json.dumps(bodyCloseLongText)
-
-        bodyCloseShortText = json.loads(bodyCloseShort)
-        bodyCloseShortText = json.dumps(bodyCloseShortText)
-
-        ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa)
-        kupione = False
-
-    # if (sShortWyjscie == True and sprzedane == True):
-    #     bodyCloseLongText = json.loads(bodyCloseLong)
-    #     bodyCloseLongText = json.dumps(bodyCloseLongText)
-
-    #     bodyCloseShortText = json.loads(bodyCloseShort)
-    #     bodyCloseShortText = json.dumps(bodyCloseShortText)
-
-    #     ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLongText, bodyCloseShortText, paraWalutowa)
-    #     sprzedane = False
 
         
 def main():
