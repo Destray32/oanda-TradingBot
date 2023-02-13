@@ -156,6 +156,8 @@ def hekinBreakout():
     global czyNowaSwieca
     global kopiaOstatniej
 
+    godzina = datetime.datetime.now().hour
+
     # pobieranie danych
     dane = PobranieDanych()
 
@@ -175,13 +177,14 @@ def hekinBreakout():
     # w sensie czy musi być -2 czy -1 
     # TODO: ustawić dobrze stop loss i take profit w funkcji
 
-    # long pozycja
-    if przedostatnia <= dane['lower'].iloc[-2] and sprawdzOtwartePoz() == False:
-        transakcjaKup(ostatnia)
+    if godzina >= 8 and godzina <= 22:
+        # long pozycja
+        if przedostatnia <= dane['lower'].iloc[-2] and sprawdzOtwartePoz() == False:
+            transakcjaKup(ostatnia)
 
-    # short pozycja
-    if przedostatnia >= dane['upper'].iloc[-2] and sprawdzOtwartePoz() == False:
-        transakcjaSprzedaj(ostatnia)
+        # short pozycja
+        if przedostatnia >= dane['upper'].iloc[-2] and sprawdzOtwartePoz() == False:
+            transakcjaSprzedaj(ostatnia)
 
     # wyjscie z long pozycji
     if kupione == True and przedostatnia >= przedOstMiddle:
