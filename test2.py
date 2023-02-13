@@ -88,13 +88,13 @@ def transakcjaKup(ostatnia):
             kupione = False
 
     if (kupione == False and czyOtwarta == False):
-        ostatnia2 = ostatnia + 0.0022
+        ostatnia2 = ostatnia + 0.0020
         ostatnia2 = round(ostatnia2, 5)
 
-        ostatnia3 = ostatnia - 0.0006
+        ostatnia3 = ostatnia - 0.00023
         ostatnia3 = round(ostatnia3, 5)
 
-        bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+        bodyBuy = f'{{"order": {{"units": "2500","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
 
         bodyBuyText = json.loads(bodyBuy)
         bodyBuyText = json.dumps(bodyBuyText)
@@ -113,6 +113,7 @@ def transakcjaSprzedaj(ostatnia):
     bodyCloseShortText = json.dumps(bodyCloseShortText)
 
     czyOtwarta = sprawdzOtwartePoz()
+    print(czyOtwarta)
 
     if (czyOtwarta == False):
     # Teoria do przetestowania, jesli pozycja nie jest otwarta a było coś kupione to znaczy
@@ -125,13 +126,13 @@ def transakcjaSprzedaj(ostatnia):
             sprzedane = False
 
     if (sprzedane == False and czyOtwarta == False):
-        ostatnia2 = ostatnia - 0.0022
+        ostatnia2 = ostatnia - 0.0020
         ostatnia2 = round(ostatnia2, 5)
 
-        ostatnia3 = ostatnia + 0.0006
+        ostatnia3 = ostatnia + 0.00023
         ostatnia3 = round(ostatnia3, 5)
 
-        bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+        bodySell = f'{{"order": {{"units": "-2500","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
 
         bodySellText = json.loads(bodySell)
         bodySellText = json.dumps(bodySellText)
@@ -145,7 +146,7 @@ def transakcjaSprzedaj(ostatnia):
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
-    threading.Timer(1.0, hekinBreakout).start()
+    threading.Timer(4.0, hekinBreakout).start()
 
     global paraWalutowa
     global kupione
@@ -158,13 +159,16 @@ def hekinBreakout():
     # pobieranie danych
     dane = PobranieDanych()
 
-    upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=13, nbdevup=2, nbdevdn=2, matype=0)
+    upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=10, nbdevup=2, nbdevdn=2, matype=0)
     dane['upper'] = upper
+    dane['middle'] = middle
     dane['lower'] = lower
     
     ostatnia = dane['Close'].iloc[-1]
     przedostatnia = dane['Close'].iloc[-2]
+
     przedOstUpper = round(dane['upper'].iloc[-2], 5)
+    przedOstMiddle = round(dane['middle'].iloc[-2], 5)
     przedOstLower = round(dane['lower'].iloc[-2], 5)
 
     # TODO: sprawdzić czy dobrze kupuje według syngału.
@@ -172,22 +176,24 @@ def hekinBreakout():
     # TODO: ustawić dobrze stop loss i take profit w funkcji
 
     # long pozycja
-    if przedostatnia <= dane['lower'].iloc[-2]:
+    if przedostatnia <= dane['lower'].iloc[-2] and sprawdzOtwartePoz() == False:
         transakcjaKup(ostatnia)
 
     # short pozycja
-    if przedostatnia >= dane['upper'].iloc[-2]:
+    if przedostatnia >= dane['upper'].iloc[-2] and sprawdzOtwartePoz() == False:
         transakcjaSprzedaj(ostatnia)
 
     # wyjscie z long pozycji
-    if kupione == True and przedostatnia >= przedOstUpper:
+    if kupione == True and przedostatnia >= przedOstMiddle:
         ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
         kupione = False
 
     # wyjscie z short pozycji
-    if sprzedane == True and przedostatnia <= przedOstLower:
+    if sprzedane == True and przedostatnia <= przedOstMiddle:
         ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
         sprzedane = False
+
+
         
      
 def main():
