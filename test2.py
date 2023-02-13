@@ -88,7 +88,7 @@ def transakcjaKup(ostatnia):
             kupione = False
 
     if (kupione == False and czyOtwarta == False):
-        ostatnia2 = ostatnia + 0.022
+        ostatnia2 = ostatnia + 0.0022
         ostatnia2 = round(ostatnia2, 5)
 
         ostatnia3 = ostatnia - 0.0006
@@ -158,7 +158,7 @@ def hekinBreakout():
     # pobieranie danych
     dane = PobranieDanych()
 
-    upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=14, nbdevup=2, nbdevdn=2, matype=0)
+    upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=13, nbdevup=2, nbdevdn=2, matype=0)
     dane['upper'] = upper
     dane['lower'] = lower
     
