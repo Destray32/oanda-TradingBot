@@ -88,10 +88,10 @@ def transakcjaKup(ostatnia):
             kupione = False
 
     if (kupione == False and czyOtwarta == False):
-        ostatnia2 = ostatnia + 0.011
+        ostatnia2 = ostatnia + 0.022
         ostatnia2 = round(ostatnia2, 5)
 
-        ostatnia3 = ostatnia - 0.004
+        ostatnia3 = ostatnia - 0.0006
         ostatnia3 = round(ostatnia3, 5)
 
         bodyBuy = f'{{"order": {{"units": "10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
@@ -125,10 +125,10 @@ def transakcjaSprzedaj(ostatnia):
             sprzedane = False
 
     if (sprzedane == False and czyOtwarta == False):
-        ostatnia2 = ostatnia - 0.00011
+        ostatnia2 = ostatnia - 0.0022
         ostatnia2 = round(ostatnia2, 5)
 
-        ostatnia3 = ostatnia + 0.0005
+        ostatnia3 = ostatnia + 0.0006
         ostatnia3 = round(ostatnia3, 5)
 
         bodySell = f'{{"order": {{"units": "-10000","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
@@ -145,7 +145,7 @@ def transakcjaSprzedaj(ostatnia):
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
-    # threading.Timer(1.0, hekinBreakout).start()
+    threading.Timer(1.0, hekinBreakout).start()
 
     global paraWalutowa
     global kupione
@@ -155,27 +155,41 @@ def hekinBreakout():
     global czyNowaSwieca
     global kopiaOstatniej
 
-    timeFrame = "M1"
-    zamknieciaSwieczek = []
-
     # pobieranie danych
     dane = PobranieDanych()
 
-    dane['ms'] = ta.CDLMORNINGSTAR(dane['Open'], dane['High'], dane['Low'], dane['Close'])
-    dane['ms_d']= ta.CDLMORNINGDOJISTAR(dane['Open'], dane['High'], dane['Low'], dane['Close'])
+    upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=14, nbdevup=2, nbdevdn=2, matype=0)
+    dane['upper'] = upper
+    dane['lower'] = lower
     
     ostatnia = dane['Close'].iloc[-1]
+    przedostatnia = dane['Close'].iloc[-2]
+    przedOstUpper = round(dane['upper'].iloc[-2], 5)
+    przedOstLower = round(dane['lower'].iloc[-2], 5)
 
     # TODO: sprawdzić czy dobrze kupuje według syngału.
     # w sensie czy musi być -2 czy -1 
     # TODO: ustawić dobrze stop loss i take profit w funkcji
-    # if dane['ms'].iloc[-2] == 100 or dane['ms_d'].iloc[-2] == 100:
-    #     transakcjaKup(ostatnia)
 
-    
+    # long pozycja
+    if przedostatnia <= dane['lower'].iloc[-2]:
+        transakcjaKup(ostatnia)
 
+    # short pozycja
+    if przedostatnia >= dane['upper'].iloc[-2]:
+        transakcjaSprzedaj(ostatnia)
 
+    # wyjscie z long pozycji
+    if kupione == True and przedostatnia >= przedOstUpper:
+        ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+        kupione = False
+
+    # wyjscie z short pozycji
+    if sprzedane == True and przedostatnia <= przedOstLower:
+        ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+        sprzedane = False
         
+     
 def main():
     hekinBreakout()
 

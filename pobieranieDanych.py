@@ -11,9 +11,9 @@ headers = {
 }
 
 def PobranieDanych():
-    paraWalutowa = "USD_JPY"
-    dlugosc = 1000
-    timeFrame = "D"
+    paraWalutowa = "EUR_USD"
+    dlugosc = 2000
+    timeFrame = "M1"
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
 

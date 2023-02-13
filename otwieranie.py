@@ -1,4 +1,5 @@
 import requests
+import datetime
 
 
 def Kupowanie(czyOtwarta, body, headers, ACCOUNT_ID):
@@ -9,7 +10,8 @@ def Kupowanie(czyOtwarta, body, headers, ACCOUNT_ID):
         res = requests.post(f"https://api-fxpractice.oanda.com/v3/accounts/{ACCOUNT_ID}/orders", headers=headers, data=body)
         # print(res.json())
         # print (res.status_code)
-        print("Kupiono")
+        czas = datetime.datetime.now()
+        print("Kupiono" + czas.strftime("%H:%M:%S"))
         return True
     else:
         print("Nie można kupić ponieważ jest otwarta pozycja")
