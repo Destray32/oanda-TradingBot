@@ -76,7 +76,6 @@ def sprawdzOtwartePoz():
             return False
 
 def transakcjaKup(ostatnia):
-    print("Kupuje")
     global kupione
     global czyWystopowany
 
@@ -121,7 +120,6 @@ def transakcjaSprzedaj(ostatnia):
     bodyCloseShortText = json.dumps(bodyCloseShortText)
 
     czyOtwarta = sprawdzOtwartePoz()
-    print(czyOtwarta)
 
     if (czyOtwarta == False):
     # Teoria do przetestowania, jesli pozycja nie jest otwarta a było coś kupione to znaczy
@@ -202,24 +200,34 @@ def closeWczorajStrat(dane, godzina, sprzedane, kupione):
     przedostatnia = dane['Close'].iloc[-2]
     trzecia = dane['Close'].iloc[-3]
 
-    if godzina >= 8 and godzina <= 22:
-        # short pozycja
-        if przedostatnia < trzecia:
-            if kupione == True:
-                ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
-                kupione = False
-                transakcjaSprzedaj(ostatnia)
-            else:
-                transakcjaSprzedaj(ostatnia)
-            
-        # long pozycja
-        if przedostatnia > trzecia:
-            if sprzedane == True:
-                ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
-                sprzedane = False
-                transakcjaKup(ostatnia)
-            else:
-                transakcjaKup(ostatnia)
+    # short pozycja
+    if przedostatnia < trzecia:
+        if kupione == True:
+            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+            kupione = False
+            transakcjaSprzedaj(ostatnia)
+        else:
+            transakcjaSprzedaj(ostatnia)
+        
+    # long pozycja
+    if przedostatnia > trzecia:
+        if sprzedane == True:
+            ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+            sprzedane = False
+            transakcjaKup(ostatnia)
+        else:
+            transakcjaKup(ostatnia)
+
+    # if kupione == True and godzina >= 23 and godzina <= 8:
+    #     if przedostatnia < trzecia:
+    #         ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+    #         kupione = False
+
+    # if sprzedane == True and godzina >= 23 and godzina <= 8:
+    #     if przedostatnia > trzecia:
+    #         ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+    #         sprzedane = False
+        
             
 
 
