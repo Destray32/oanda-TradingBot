@@ -10,7 +10,7 @@ import pandas as pd
 
 from otwieranie import Kupowanie, Sprzedawanie
 from zamykanie import ZamknijPoz
-from pobieranieDanych import PobranieDanych
+from pobieranie.pobieranieDanych import PobranieDanych
 
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN')
 ACCOUNT_ID = os.environ.get('ACCOUNT_ID')
@@ -29,6 +29,9 @@ global dWieksze
 global czyWystopowany
 global czyNowaSwieca
 global kopiaOstatniej
+global czyOtwarte
+global czyZostaloZamkniete
+global timerZamkniecia
 paraWalutowa = "EUR_USD"
 kupione = False
 sprzedane = False
@@ -38,6 +41,9 @@ dWieksze = False
 czyWystopowany = False
 czyNowaSwieca = False
 kopiaOstatniej = 0
+czyOtwarte = False
+czyZostaloZamkniete = False
+timerZamkniecia = 120
 
 # body do kupowania waluty
 bodyCloseLong = '{"longUnits": "ALL"}'
@@ -56,6 +62,7 @@ def sprawdzOtwartePoz():
     pozycje = res.json()
     # print(pozycje)
     pozycje = pozycje['positions']
+
     if (len(pozycje) == 0):
         # print("Nie ma otwartych pozycji")
         return False
@@ -69,6 +76,7 @@ def sprawdzOtwartePoz():
             return False
 
 def transakcjaKup(ostatnia):
+    print("Kupuje")
     global kupione
     global czyWystopowany
 
@@ -94,7 +102,7 @@ def transakcjaKup(ostatnia):
         ostatnia3 = ostatnia - 0.00023
         ostatnia3 = round(ostatnia3, 5)
 
-        bodyBuy = f'{{"order": {{"units": "2500","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+        bodyBuy = f'{{"order": {{"units": "2500","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
 
         bodyBuyText = json.loads(bodyBuy)
         bodyBuyText = json.dumps(bodyBuyText)
@@ -132,7 +140,7 @@ def transakcjaSprzedaj(ostatnia):
         ostatnia3 = ostatnia + 0.00023
         ostatnia3 = round(ostatnia3, 5)
 
-        bodySell = f'{{"order": {{"units": "-2500","instrument": "{paraWalutowa}","timeInForce": "GTC", "type": "LIMIT", "price": "{ostatnia2}", "takeProfitOnFill": {{"price": "{ostatnia2}", "TimeInForce": "GTC" }}, "stopLossOnFill": {{"price": "{ostatnia3}", "TimeInForce": "GTC" }}}}}}'
+        bodySell = f'{{"order": {{"units": "-2500","instrument": "{paraWalutowa}","timeInForce": "FOK","type": "MARKET","positionFill": "DEFAULT"}}}}'
 
         bodySellText = json.loads(bodySell)
         bodySellText = json.dumps(bodySellText)
@@ -146,7 +154,7 @@ def transakcjaSprzedaj(ostatnia):
 
 def hekinBreakout():
     # odpala funkcje w nowym watku. Funkcja sie nie chainuje wiec nie będzie błędów. Wykonuje się co 2 sekundy
-    threading.Timer(4.0, hekinBreakout).start()
+    threading.Timer(1.0, hekinBreakout).start()
 
     global paraWalutowa
     global kupione
@@ -155,12 +163,67 @@ def hekinBreakout():
     global dWieksze
     global czyNowaSwieca
     global kopiaOstatniej
+    global czyOtwarte
+    global czyZostaloZamkniete
+    global timerZamkniecia
 
     godzina = datetime.datetime.now().hour
 
+    kopiaCzyOtwarte = czyOtwarte
+
+    czyOtwarte = sprawdzOtwartePoz()
+
+    # if (kopiaCzyOtwarte != czyOtwarte):
+    #     if (czyOtwarte == False):
+    #         czyZostaloZamkniete = True
+    #         print("Pozycja została zamknięta")
+
+
+    # if timerZamkniecia != 0 and czyZostaloZamkniete == True:
+    #     timerZamkniecia = timerZamkniecia - 1
+    #     print(timerZamkniecia)
+    #     return
+    # else:
+    #     timerZamkniecia = 120
+    #     czyZostaloZamkniete = False
+        
+        
+
+
     # pobieranie danych
     dane = PobranieDanych()
+    closeWczorajStrat(dane, godzina, sprzedane, kupione)
 
+
+############################################################################################################
+
+def closeWczorajStrat(dane, godzina, sprzedane, kupione):
+    ostatnia = dane['Close'].iloc[-1]
+    przedostatnia = dane['Close'].iloc[-2]
+    trzecia = dane['Close'].iloc[-3]
+
+    if godzina >= 8 and godzina <= 22:
+        # short pozycja
+        if przedostatnia < trzecia:
+            if kupione == True:
+                ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+                kupione = False
+                transakcjaSprzedaj(ostatnia)
+            else:
+                transakcjaSprzedaj(ostatnia)
+            
+        # long pozycja
+        if przedostatnia > trzecia:
+            if sprzedane == True:
+                ZamknijPoz(ACCOUNT_ID, headers, bodyCloseLong, bodyCloseShort, paraWalutowa)
+                sprzedane = False
+                transakcjaKup(ostatnia)
+            else:
+                transakcjaKup(ostatnia)
+            
+
+
+def boilingerSrat(dane, godzina):
     upper, middle, lower = ta.BBANDS(dane['Close'], timeperiod=10, nbdevup=2, nbdevdn=2, matype=0)
     dane['upper'] = upper
     dane['middle'] = middle
@@ -179,11 +242,11 @@ def hekinBreakout():
 
     if godzina >= 8 and godzina <= 22:
         # long pozycja
-        if przedostatnia <= dane['lower'].iloc[-2] and sprawdzOtwartePoz() == False:
+        if przedostatnia <= dane['lower'].iloc[-2] and czyOtwarte == False:
             transakcjaKup(ostatnia)
 
         # short pozycja
-        if przedostatnia >= dane['upper'].iloc[-2] and sprawdzOtwartePoz() == False:
+        if przedostatnia >= dane['upper'].iloc[-2] and czyOtwarte == False:
             transakcjaSprzedaj(ostatnia)
 
     # wyjscie z long pozycji
@@ -197,8 +260,7 @@ def hekinBreakout():
         sprzedane = False
 
 
-        
-     
+         
 def main():
     hekinBreakout()
 

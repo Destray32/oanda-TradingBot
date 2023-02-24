@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "E:\\vscode-projekty\\wd-logowanie-py\\src\\kivy_venv\\Lib",
+        "./pobieranie"
+    ]
+}

@@ -10,7 +10,7 @@ import pandas as pd
 
 from otwieranie import Kupowanie, Sprzedawanie
 from zamykanie import ZamknijPoz
-from pobieranieDanych import PobranieDanych
+from pobieranie.pobieranieDanych import PobranieDanych
 
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN')
 ACCOUNT_ID = os.environ.get('ACCOUNT_ID')

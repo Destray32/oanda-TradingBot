@@ -1,4 +1,4 @@
-from pobieranieDanych import PobranieDanych
+from pobieranie.pobieranieDanych import PobranieDanych
 
 def chiko_span(data):
     return data.Close.shift(-1)

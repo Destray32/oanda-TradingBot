@@ -12,7 +12,7 @@ headers = {
 
 def PobranieDanych():
     paraWalutowa = "EUR_USD"
-    dlugosc = 2000
+    dlugosc = 5000
     timeFrame = "M1"
 
     response = requests.get(f"https://api-fxpractice.oanda.com/v3/instruments/{paraWalutowa}/candles?count={dlugosc}&price=M&granularity={timeFrame}", headers=headers)
